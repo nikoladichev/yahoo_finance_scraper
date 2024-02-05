@@ -14,5 +14,8 @@ RUN apt-get update && apt-get install -y python3 python3-pip
 # Install any additional dependencies your project may need
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+#Expose server port
+EXPOSE 9090
+
 # Run your Python script
 CMD ["python3", "server.py"]
