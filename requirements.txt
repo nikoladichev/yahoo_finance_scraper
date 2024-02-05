@@ -1,0 +1,5 @@
+pip~=24.0
+wheel~=0.41.2
+setuptools~=68.2.0
+flask~=3.0.1
+selenium~=4.17.2
