@@ -187,7 +187,7 @@ def scrape_analysis(driver, ticker_symbol):
 
     for table in tables:
         headers = table.find_element(By.TAG_NAME, 'thead').find_elements(By.TAG_NAME, 'th')
-        column_data = []
+        dict = {}
         for i in range(1, len(headers)):
             rows = table.find_element(By.TAG_NAME, 'tbody').find_elements(By.TAG_NAME, 'tr')
             data = {}
@@ -213,10 +213,9 @@ def scrape_analysis(driver, ticker_symbol):
                     val = round(float(val.replace("%", "")) / 100, 2)
 
                 data[prop] = val
-            column_data.append(
-                {headers[i].text.lower().replace(" ", "_").replace(".", "").replace("(", "").replace(")", ""): data})
+            dict[headers[i].text.lower().replace(" ", "_").replace(".", "").replace("(", "").replace(")", "")] = data
 
-        analysis[headers[0].text.lower().replace(" ", "_")] = column_data
+        analysis[headers[0].text.lower().replace(" ", "_")] = dict
 
     return analysis
 
