@@ -11,7 +11,7 @@ from selenium.common.exceptions import TimeoutException
 from enum import Enum
 
 
-class Section(Enum):
+class YfSection(Enum):
     SUMMARY = ('', lambda driver, ticker_symbol: scrape_summary(driver, ticker_symbol))
     STATISTICS = ('/key-statistics', lambda driver, ticker_symbol: scrape_statistics(driver, ticker_symbol))
     HISTORICAL_DATA = ('/history', lambda driver, ticker_symbol: scrape_statistics(driver, ticker_symbol))
@@ -34,7 +34,7 @@ class Section(Enum):
     SUSTAINABILITY = ('/sustainability', lambda driver, ticker_symbol: scrape_sustainability(driver, ticker_symbol))
 
 
-def scrape_stock_data(ticker_symbol: string, section: Section):
+def yf_stock_data(ticker_symbol: string, section: YfSection):
     # build the URL of the target page
     url = f'https://finance.yahoo.com/quote/{ticker_symbol}{section.value[0]}'
 
