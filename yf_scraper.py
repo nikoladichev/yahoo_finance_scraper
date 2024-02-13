@@ -1,4 +1,6 @@
 import string
+import requests
+import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -9,34 +11,150 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 from enum import Enum
+from lxml import html, etree
+from user_agent import generate_user_agent
 
 
 class YfSection(Enum):
-    SUMMARY = ('', lambda driver, ticker_symbol: scrape_summary(driver, ticker_symbol))
-    STATISTICS = ('/key-statistics', lambda driver, ticker_symbol: scrape_statistics(driver, ticker_symbol))
-    HISTORICAL_DATA = ('/history', lambda driver, ticker_symbol: scrape_statistics(driver, ticker_symbol))
-    PROFILE = ('/profile', lambda driver, ticker_symbol: scrape_profile(driver, ticker_symbol))
+    SUMMARY = ('', lambda symbol: scrape_summary(symbol))
+    STATISTICS = ('/key-statistics', lambda symbol: scrape_statistics(symbol))
+    HISTORICAL_DATA = ('/history', lambda symbol: scrape_historical_data(symbol))
+    PROFILE = ('/profile', lambda symbol: scrape_profile(symbol))
     FINANCIALS_INCOME_STATEMENT_ANNUAL = (
-        '/financials', lambda driver, ticker_symbol: scrape_income_statement_annual(driver, ticker_symbol))
+        '/financials', lambda symbol: scrape_income_statement_annual(symbol))
     FINANCIALS_INCOME_STATEMENT_QUARTERLY = (
-        '/financials', lambda driver, ticker_symbol: scrape_income_statement_quarterly(driver, ticker_symbol))  # FIXME
+        '/financials', lambda symbol: scrape_income_statement_quarterly(symbol))  # FIXME
     FINANCIALS_INCOME_BALANCE_SHEET_ANNUAL = (
-        '/balance-sheet', lambda driver, ticker_symbol: scrape_balance_sheet_annual(driver, ticker_symbol))
+        '/balance-sheet', lambda symbol: scrape_balance_sheet_annual(symbol))
     FINANCIALS_INCOME_BALANCE_SHEET_QUARTERLY = (
-        '/balance-sheet', lambda driver, ticker_symbol: scrape_balance_sheet_quarterly(driver, ticker_symbol))  # FIXME
+        '/balance-sheet', lambda symbol: scrape_balance_sheet_quarterly(symbol))  # FIXME
     FINANCIALS_CASH_FLOW_ANNUAL = (
-        '/cash-flow', lambda driver, ticker_symbol: scrape_cash_flow_annual(driver, ticker_symbol))
+        '/cash-flow', lambda symbol: scrape_cash_flow_annual(symbol))
     FINANCIALS_CASH_FLOW_QUARTERLY = (
-        '/cash-flow', lambda driver, ticker_symbol: scrape_cash_flow_quarterly(driver, ticker_symbol))  # FIXME
-    ANALYSIS = ('/analysis', lambda driver, ticker_symbol: scrape_analysis(driver, ticker_symbol))
-    OPTIONS = ('/options', lambda driver, ticker_symbol: scrape_options(driver, ticker_symbol))
-    HOLDERS = ('/holders', lambda driver, ticker_symbol: scrape_holders(driver, ticker_symbol))
-    SUSTAINABILITY = ('/sustainability', lambda driver, ticker_symbol: scrape_sustainability(driver, ticker_symbol))
+        '/cash-flow', lambda symbol: scrape_cash_flow_quarterly(symbol))  # FIXME
+    ANALYSIS = ('/analysis', lambda symbol: scrape_analysis(symbol))
+    OPTIONS = ('/options', lambda symbol: scrape_options(symbol))
+    HOLDERS = ('/holders', lambda symbol: scrape_holders(symbol))
+    SUSTAINABILITY = ('/sustainability', lambda symbol: scrape_sustainability(symbol))
 
 
-def yf_stock_data(ticker_symbol: string, section: YfSection):
+STOCK_PAGE = {}
+
+
+def load_page(symbol: string, section: YfSection, parse=True):
+    global STOCK_PAGE
+
+    url = f'https://finance.yahoo.com/quote/{symbol}{section.value[0]}'
+    params = {"_guc_consent_skip": int(time.time())}
+    user_agent = generate_user_agent()
+
+    if symbol not in STOCK_PAGE:
+        STOCK_PAGE[symbol] = requests.get(
+            url=url,
+            params=params,
+            verify=False,
+            headers={"User-Agent": user_agent})
+
+    content = STOCK_PAGE[symbol]
+
+    if parse:
+        return html.fromstring(content.text), content.url
+    else:
+        return content.text, content.url
+
+
+def yf_stock_data(symbol: string, section: YfSection):
+    page_html = load_page(symbol, section, True)[0]
+    return section.value[1](page_html)
+
+def scrape_summary(symbol: string):
+    raise NotImplementedError("Summary API is not implemented yet")
+
+
+def scrape_statistics(symbol: string):
+    raise NotImplementedError("Statistics API is not implemented yet")
+
+
+def scrape_historical_data(symbol: string):
+    raise NotImplementedError("Historical Data API is not implemented yet")
+
+
+def scrape_profile(symbol: string):
+    raise NotImplementedError("Profile API is not implemented yet")
+
+
+def scrape_income_statement_annual(symbol: string):
+    raise NotImplementedError("Income Statement API is not implemented yet")
+
+
+def scrape_income_statement_quarterly(symbol: string):
+    raise NotImplementedError("Income Statement API is not implemented yet")
+
+
+def scrape_balance_sheet_annual(symbol: string):
+    raise NotImplementedError("Balance Sheet API is not implemented yet")
+
+
+def scrape_balance_sheet_quarterly(symbol: string):
+    raise NotImplementedError("Balance Sheet API is not implemented yet")
+
+
+def scrape_cash_flow_annual(symbol: string):
+    raise NotImplementedError("Cash Flow API is not implemented yet")
+
+
+def scrape_cash_flow_quarterly(symbol: string):
+    raise NotImplementedError("Cash Flow API is not implemented yet")
+
+
+
+def scrape_analysis(page_parsed):
+    analysis = {}
+
+    section = page_parsed.cssselect('section[data-test="qsp-analyst"]')[0]
+    analysis['currency'] = section.cssselect('div')[0].text_content().replace("Currency in ", "")
+
+    tables = section.cssselect('table')
+
+    for table in tables:
+        headers = table.cssselect('thead th')
+        dict = {}
+        for i in range(1, len(headers)):
+            rows = table.cssselect('tbody tr')
+            data = {}
+            for row in rows:
+                prop = (row.cssselect('td')[0].text_content().lower()
+                        .replace(" ", "_")
+                        .replace(".", "")
+                        .replace("(", "")
+                        .replace(")", "")
+                        .replace("%", "percent")
+                        .replace("/", "_over_"))
+                val = row.cssselect('td')[i].text_content()
+
+                if is_numeric(val):
+                    val = round(float(val), 2)
+                elif val.endswith("M"):
+                    val = int(float(val.replace("M", "")) * 1000000)
+                elif val.endswith("B"):
+                    val = int(float(val.replace("B", "")) * 1000000000)
+                elif "N/A" == val:
+                    val = None
+                elif val.endswith("%"):
+                    val = round(float(val.replace("%", "")) / 100, 2)
+
+                data[prop] = val
+            dict[headers[i].text_content().lower().replace(" ", "_").replace(".", "").replace("(", "").replace(")", "")] = data
+
+        analysis[headers[0].text_content().lower().replace(" ", "_")] = dict
+
+    return analysis
+
+
+
+def scrape_analysis_selenium(symbol):
     # build the URL of the target page
-    url = f'https://finance.yahoo.com/quote/{ticker_symbol}{section.value[0]}'
+    url = f'https://finance.yahoo.com/quote/{symbol}/analysis'
 
     # initialize a web driver instance to control a Chrome window
     options = Options()
@@ -62,7 +180,48 @@ def yf_stock_data(ticker_symbol: string, section: YfSection):
         accept_all_button = consent_overlay.find_element(By.CSS_SELECTOR, '.accept-all')
         accept_all_button.click()
 
-        return section.value[1](driver, ticker_symbol)
+        analysis = {}
+        analysis['currency'] = driver.find_element(By.CSS_SELECTOR, '[data-test="qsp-analyst"]').find_element(
+            By.TAG_NAME,
+            'span').text.replace(
+            "Currency in ", "")
+
+        tables = driver.find_element(By.CSS_SELECTOR, '[data-test="qsp-analyst"]').find_elements(By.TAG_NAME, 'table')
+
+        for table in tables:
+            headers = table.find_element(By.TAG_NAME, 'thead').find_elements(By.TAG_NAME, 'th')
+            dict = {}
+            for i in range(1, len(headers)):
+                rows = table.find_element(By.TAG_NAME, 'tbody').find_elements(By.TAG_NAME, 'tr')
+                data = {}
+                for row in rows:
+                    prop = (row.find_elements(By.TAG_NAME, 'td')[0].text.lower()
+                            .replace(" ", "_")
+                            .replace(".", "")
+                            .replace("(", "")
+                            .replace(")", "")
+                            .replace("%", "percent")
+                            .replace("/", "_over_"))
+                    val = row.find_elements(By.TAG_NAME, 'td')[i].text
+
+                    if is_numeric(val):
+                        val = round(float(val), 2)
+                    elif val.endswith("M"):
+                        val = int(float(val.replace("M", "")) * 1000000)
+                    elif val.endswith("B"):
+                        val = int(float(val.replace("B", "")) * 1000000000)
+                    elif "N/A" == val:
+                        val = None
+                    elif val.endswith("%"):
+                        val = round(float(val.replace("%", "")) / 100, 2)
+
+                    data[prop] = val
+                dict[
+                    headers[i].text.lower().replace(" ", "_").replace(".", "").replace("(", "").replace(")", "")] = data
+
+            analysis[headers[0].text.lower().replace(" ", "_")] = dict
+
+            return analysis
 
     except TimeoutException:
         print('Cookie consent overlay missing')
@@ -71,164 +230,15 @@ def yf_stock_data(ticker_symbol: string, section: YfSection):
         # close the browser and free up the resources
         driver.quit()
 
-
-def scrape_summary(driver, ticker_symbol):
-    regular_market_price = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="regularMarketPrice"]') \
-        .text
-    regular_market_change = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="regularMarketChange"]') \
-        .text
-    regular_market_change_percent = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="regularMarketChangePercent"]') \
-        .text \
-        .replace('(', '').replace(')', '')
-    post_market_price = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="postMarketPrice"]') \
-        .text
-    post_market_change = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="postMarketChange"]') \
-        .text
-    post_market_change_percent = driver \
-        .find_element(By.CSS_SELECTOR, f'[data-symbol="{ticker_symbol}"][data-field="postMarketChangePercent"]') \
-        .text \
-        .replace('(', '').replace(')', '')
-    previous_close = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="PREV_CLOSE-value"]').text
-    open_value = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="OPEN-value"]').text
-    bid = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="BID-value"]').text
-    ask = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="ASK-value"]').text
-    days_range = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="DAYS_RANGE-value"]').text
-    week_range = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="FIFTY_TWO_WK_RANGE-value"]').text
-    volume = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="TD_VOLUME-value"]').text
-    avg_volume = driver.find_element(By.CSS_SELECTOR,
-                                     '#quote-summary [data-test="AVERAGE_VOLUME_3MONTH-value"]').text
-    market_cap = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="MARKET_CAP-value"]').text
-    beta = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="BETA_5Y-value"]').text
-    pe_ratio = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="PE_RATIO-value"]').text
-    eps = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="EPS_RATIO-value"]').text
-    earnings_date = driver.find_element(By.CSS_SELECTOR, '#quote-summary [data-test="EARNINGS_DATE-value"]').text
-    dividend_yield = driver.find_element(By.CSS_SELECTOR,
-                                         '#quote-summary [data-test="DIVIDEND_AND_YIELD-value"]').text
-    ex_dividend_date = driver.find_element(By.CSS_SELECTOR,
-                                           '#quote-summary [data-test="EX_DIVIDEND_DATE-value"]').text
-    year_target_est = driver.find_element(By.CSS_SELECTOR,
-                                          '#quote-summary [data-test="ONE_YEAR_TARGET_PRICE-value"]').text
-
-    # initialize the dictionary
-    stock = {}
-    stock['regular_market_price'] = regular_market_price
-    stock['regular_market_change'] = regular_market_change
-    stock['regular_market_change_percent'] = regular_market_change_percent
-    stock['post_market_price'] = post_market_price
-    stock['post_market_change'] = post_market_change
-    stock['post_market_change_percent'] = post_market_change_percent
-    stock['previous_close'] = previous_close
-    stock['open_value'] = open_value
-    stock['bid'] = bid
-    stock['ask'] = ask
-    stock['days_range'] = days_range
-    stock['week_range'] = week_range
-    stock['volume'] = volume
-    stock['avg_volume'] = avg_volume
-    stock['market_cap'] = market_cap
-    stock['beta'] = beta
-    stock['pe_ratio'] = pe_ratio
-    stock['eps'] = eps
-    stock['earnings_date'] = earnings_date
-    stock['dividend_yield'] = dividend_yield
-    stock['ex_dividend_date'] = ex_dividend_date
-    stock['year_target_est'] = year_target_est
-    return stock
-
-
-def scrape_statistics(driver, ticker_symbol):
-    raise NotImplementedError("Statistics API is not implemented yet")
-
-
-def scrape_historical_data(driver, ticker_symbol):
-    raise NotImplementedError("Historical Data API is not implemented yet")
-
-
-def scrape_profile(driver, ticker_symbol):
-    raise NotImplementedError("Profile API is not implemented yet")
-
-
-def scrape_income_statement_annual(driver, ticker_symbol):
-    raise NotImplementedError("Income Statement API is not implemented yet")
-
-
-def scrape_income_statement_quarterly(driver, ticker_symbol):
-    raise NotImplementedError("Income Statement API is not implemented yet")
-
-
-def scrape_balance_sheet_annual(driver, ticker_symbol):
-    raise NotImplementedError("Balance Sheet API is not implemented yet")
-
-
-def scrape_balance_sheet_quarterly(driver, ticker_symbol):
-    raise NotImplementedError("Balance Sheet API is not implemented yet")
-
-
-def scrape_cash_flow_annual(driver, ticker_symbol):
-    raise NotImplementedError("Cash Flow API is not implemented yet")
-
-
-def scrape_cash_flow_quarterly(driver, ticker_symbol):
-    raise NotImplementedError("Cash Flow API is not implemented yet")
-
-
-def scrape_analysis(driver, ticker_symbol):
-    analysis = {}
-    analysis['currency'] = driver.find_element(By.CSS_SELECTOR, '[data-test="qsp-analyst"]').find_element(By.TAG_NAME,
-                                                                                                          'span').text.replace(
-        "Currency in ", "")
-
-    tables = driver.find_element(By.CSS_SELECTOR, '[data-test="qsp-analyst"]').find_elements(By.TAG_NAME, 'table')
-
-    for table in tables:
-        headers = table.find_element(By.TAG_NAME, 'thead').find_elements(By.TAG_NAME, 'th')
-        dict = {}
-        for i in range(1, len(headers)):
-            rows = table.find_element(By.TAG_NAME, 'tbody').find_elements(By.TAG_NAME, 'tr')
-            data = {}
-            for row in rows:
-                prop = (row.find_elements(By.TAG_NAME, 'td')[0].text.lower()
-                        .replace(" ", "_")
-                        .replace(".", "")
-                        .replace("(", "")
-                        .replace(")", "")
-                        .replace("%", "percent")
-                        .replace("/", "_over_"))
-                val = row.find_elements(By.TAG_NAME, 'td')[i].text
-
-                if is_numeric(val):
-                    val = round(float(val), 2)
-                elif val.endswith("M"):
-                    val = int(float(val.replace("M", "")) * 1000000)
-                elif val.endswith("B"):
-                    val = int(float(val.replace("B", "")) * 1000000000)
-                elif "N/A" == val:
-                    val = None
-                elif val.endswith("%"):
-                    val = round(float(val.replace("%", "")) / 100, 2)
-
-                data[prop] = val
-            dict[headers[i].text.lower().replace(" ", "_").replace(".", "").replace("(", "").replace(")", "")] = data
-
-        analysis[headers[0].text.lower().replace(" ", "_")] = dict
-
-    return analysis
-
-
-def scrape_options(driver, ticker_symbol):
+def scrape_options(symbol: string):
     raise NotImplementedError("Options API is not implemented yet")
 
 
-def scrape_holders(driver, ticker_symbol):
+def scrape_holders(symbol: string):
     raise NotImplementedError("Holders API is not implemented yet")
 
 
-def scrape_sustainability(driver, ticker_symbol):
+def scrape_sustainability(symbol: string):
     raise NotImplementedError("Sustainability API is not implemented yet")
 
 

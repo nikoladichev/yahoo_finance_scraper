@@ -11,11 +11,11 @@ def alive():
     return "Scraper is up!", 200
 
 @app.route("/<ticker_symbol>/analysis")
-def scrape_summary(ticker_symbol: string):
+def analysis(ticker_symbol: string):
     return jsonify(yf_stock_data(ticker_symbol, YfSection.ANALYSIS)), 200
 
 @app.route("/<ticker_symbol>/revenue-build")
-def scrape_revenue_build(ticker_symbol: string):
+def rev_build(ticker_symbol: string):
     return jsonify(revenue_build(ticker_symbol))
 
 
